@@ -1,9 +1,0 @@
-Basado en los detalles técnicos del estudio, la respuesta es un rotundo sí: es totalmente posible obtener esos keypoints para reconstruir un esqueleto y hacer captura de movimiento (motion capture).
-
-De hecho, ese es el logro principal del sistema desarrollado por los autores
-. Esas intersecciones o cruces (que en el artículo original se ilustran como cruces verdes sobre los sujetos) representan los 40 puntos de referencia anatómicos 2D que la inteligencia artificial ha detectado
-
-Reconstrucción de las articulaciones del esqueleto: Aunque esos keypoints se encuentran en la superficie corporal (sobre los huesos notables como los epicóndilos o los maléolos), el artículo detalla que los centros de las articulaciones internas del esqueleto pueden calcularse fácilmente a partir de ellos
-. Por ejemplo, el centro de la articulación de la rodilla se calcula encontrando el punto medio exacto entre los dos keypoints que están a los lados de la rodilla (marcadores FLE y FME); lo mismo ocurre para el codo, el tobillo y la muñeca
-. Para las caderas y hombros, aplican modelos biomecánicos estándar (como las directrices de C-Motion) utilizando los keypoints de la pelvis y el tórax
-.
