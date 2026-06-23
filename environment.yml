@@ -1,0 +1,8 @@
+name: retargeting-mocap
+channels:
+  - conda-forge
+  - https://conda.anaconda.org/pyt
+  - defaults
+dependencies:
+  - opencv
+prefix: C:\Users\KELVIN\miniconda3\envs\retargeting-mocap
