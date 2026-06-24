@@ -1,3 +1,4 @@
 assets/*
 trash/*
-data/scene-01-take-01-cam-*.mp4
+data/raw/scene-01-take-01-cam-*.mp4
+__pycache__/

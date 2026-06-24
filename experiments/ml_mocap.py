@@ -1,7 +1,11 @@
 import cv2
-import c3d 
+import c3d
+import json
+import os
 import numpy as np
-from cvzone.PoseModule import PoseDetector
+from mediapipe.tasks import python
+from mediapipe.tasks.python import vision
+import mediapipe as mp
 
 POSE_CONNECTIONS = [
     (11, 12),
@@ -13,7 +17,9 @@ POSE_CONNECTIONS = [
     (24, 26), (26, 28),
 ]
 
-VIDEO_PATH = r"C:\projects\retargeting-mocap-project\data\test-video.mp4"
+VIDEO_PATH = r"C:\projects\retargeting-mocap-project\data\test-video-2.mp4"
+
+MODEL_PATH = r"C:\projects\retargeting-mocap-project\models\pose_landmarker_full.task"
 
 TXT_OUTPUT = r"C:\projects\retargeting-mocap-project\outputs\others\AnimationFile.txt"
 
@@ -21,14 +27,45 @@ NPY_OUTPUT = r"C:\projects\retargeting-mocap-project\outputs\others\landmarks.np
 
 C3D_OUTPUT = r"C:\projects\retargeting-mocap-project\outputs\others\landmarks.c3d"
 
+VIDEO_OUTPUT = r"C:\projects\retargeting-mocap-project\outputs\others\pose_overlay.mp4"
+
+JSON_OUTPUT = r"C:\projects\retargeting-mocap-project\outputs\others\landmarks_sync.json"
+
 #####################################################################################
 
-def draw_skeleton(img, lmList):
+def save_json_sync(points, output_path, fps=30):
+
+    data = {
+        "fps": fps,
+        "num_frames": len(points),
+        "frames": []
+    }
+
+    for i, frame in enumerate(points):
+
+        data["frames"].append({
+            "frame_id": i,
+            "landmarks": frame
+        })
+
+    with open(output_path, "w") as f:
+        json.dump(data, f)
+
+    print("JSON saved:", output_path)
+    print("frames:", len(points))
+
+
+def draw_skeleton(img, landmarks):
+
+    h, w, _ = img.shape
 
     for a, b in POSE_CONNECTIONS:
 
-        xa, ya, za = lmList[a]
-        xb, yb, zb = lmList[b]
+        xa = int(landmarks[a].x * w)
+        ya = int(landmarks[a].y * h)
+
+        xb = int(landmarks[b].x * w)
+        yb = int(landmarks[b].y * h)
 
         cv2.line(
             img,
@@ -37,24 +74,25 @@ def draw_skeleton(img, lmList):
             (0, 255, 0),
             2
         )
-        
-def extract_frame_landmarks(lmList, image_height):
+
+def extract_frame_landmarks(world_landmarks):
 
     frame_points = []
 
-    for lm in lmList:
+    for lm in world_landmarks:
 
-        x = lm[0]
+        x = lm.x * 1000
+        y = lm.y * 1000
+        z = lm.z * 1000
 
-        y = image_height - lm[1]
-
-        z = lm[2]
-
-        frame_points.append(
-            [x, y, z]
-        )
+        frame_points.append([
+            x,
+            z,
+            -y
+        ])
 
     return frame_points
+
 
 def save_txt(points, output_path):
 
@@ -115,15 +153,43 @@ def save_c3d(points, output_path):
         "C3D saved:",
         output_path
     )
-    
 
-def process_video(video_path):
+def process_video(video_path, output_video_path=None):
 
     cap = cv2.VideoCapture(video_path)
 
-    detector = PoseDetector()
+    base_options = python.BaseOptions(
+        model_asset_path=MODEL_PATH
+    )
+
+    options = vision.PoseLandmarkerOptions(
+        base_options=base_options,
+        running_mode=vision.RunningMode.VIDEO
+    )
+
+    landmarker = vision.PoseLandmarker.create_from_options(
+        options
+    )
 
     all_frames = []
+
+    # ===== VideoWriter =====
+    writer = None
+
+    if output_video_path is not None:
+
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+
+        writer = cv2.VideoWriter(
+            output_video_path,
+            fourcc,
+            fps,
+            (width, height)
+        )
 
     while True:
 
@@ -132,36 +198,43 @@ def process_video(video_path):
         if not success:
             break
 
-        img = detector.findPose(
+        rgb = cv2.cvtColor(
             img,
-            draw=True
+            cv2.COLOR_BGR2RGB
         )
 
-        lmList, bboxInfo = detector.findPosition(
-            img,
-            draw=True
+        mp_image = mp.Image(
+            image_format=mp.ImageFormat.SRGB,
+            data=rgb
         )
 
-        if bboxInfo:
+        timestamp_ms = int(
+            cap.get(cv2.CAP_PROP_POS_MSEC)
+        )
+
+        result = landmarker.detect_for_video(
+            mp_image,
+            timestamp_ms
+        )
+
+        if len(result.pose_world_landmarks) > 0:
 
             draw_skeleton(
                 img,
-                lmList
+                result.pose_landmarks[0]
             )
 
             frame_points = extract_frame_landmarks(
-                lmList,
-                img.shape[0]
+                result.pose_world_landmarks[0]
             )
 
-            all_frames.append(
-                frame_points
-            )
+            all_frames.append(frame_points)
+        
+        # ====================
+        if writer is not None:
+            writer.write(img)
 
-        cv2.imshow(
-            "Image",
-            img
-        )
+        cv2.imshow("Image", img)
 
         key = cv2.waitKey(1)
 
@@ -170,14 +243,33 @@ def process_video(video_path):
 
     cap.release()
 
+    if writer is not None:
+        writer.release()
+
     cv2.destroyAllWindows()
 
     return all_frames
 
+
 if __name__ == "__main__":
 
     points = process_video(
-        VIDEO_PATH
+        VIDEO_PATH,
+        VIDEO_OUTPUT
+    )
+    
+    print(points[0][0])
+    
+    cap = cv2.VideoCapture(VIDEO_PATH)
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    if fps == 0:
+        fps = 30
+    cap.release()
+
+    save_json_sync(
+        points,
+        JSON_OUTPUT,
+        fps=fps
     )
 
     save_txt(
